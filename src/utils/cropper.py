@@ -82,45 +82,43 @@ class Cropper(object):
         img_rgb = img_rgb_.copy()  # copy it
 
         img_bgr = cv2.cvtColor(img_rgb, cv2.COLOR_RGB2BGR)
-        src_face = self.face_analysis_wrapper.get(
+        src_faces = self.face_analysis_wrapper.get(
             img_bgr,
             flag_do_landmark_2d_106=True,
             direction=crop_cfg.direction,
             max_face_num=crop_cfg.max_face_num,
         )
 
-        if len(src_face) == 0:
+        if len(src_faces) == 0:
             log("No face detected in the source image.")
             return None
-        elif len(src_face) > 1:
-            log(
-                f"More than one face detected in the image, only pick one face by rule {crop_cfg.direction}."
+
+        crop_infos = []
+        for i in range(len(src_faces)):
+            # NOTE: temporarily only pick the first face, to support multiple face in the future
+            src_face = src_faces[i]
+            lmk = src_face.landmark_2d_106  # this is the 106 landmarks from insightface
+
+            # crop the face
+            ret_dct = crop_image(
+                img_rgb,  # ndarray
+                lmk,  # 106x2 or Nx2
+                dsize=crop_cfg.dsize,
+                scale=crop_cfg.scale,
+                vx_ratio=crop_cfg.vx_ratio,
+                vy_ratio=crop_cfg.vy_ratio,
             )
 
-        # NOTE: temporarily only pick the first face, to support multiple face in the future
-        src_face = src_face[0]
-        lmk = src_face.landmark_2d_106  # this is the 106 landmarks from insightface
+            lmk = self.landmark_runner.run(img_rgb, lmk)
+            ret_dct["lmk_crop"] = lmk
 
-        # crop the face
-        ret_dct = crop_image(
-            img_rgb,  # ndarray
-            lmk,  # 106x2 or Nx2
-            dsize=crop_cfg.dsize,
-            scale=crop_cfg.scale,
-            vx_ratio=crop_cfg.vx_ratio,
-            vy_ratio=crop_cfg.vy_ratio,
-        )
-
-        lmk = self.landmark_runner.run(img_rgb, lmk)
-        ret_dct["lmk_crop"] = lmk
-
-        # update a 256x256 version for network input
-        ret_dct["img_crop_256x256"] = cv2.resize(
-            ret_dct["img_crop"], (256, 256), interpolation=cv2.INTER_AREA
-        )
-        ret_dct["lmk_crop_256x256"] = ret_dct["lmk_crop"] * 256 / crop_cfg.dsize
-
-        return ret_dct
+            # update a 256x256 version for network input
+            ret_dct["img_crop_256x256"] = cv2.resize(
+                ret_dct["img_crop"], (256, 256), interpolation=cv2.INTER_AREA
+            )
+            ret_dct["lmk_crop_256x256"] = ret_dct["lmk_crop"] * 256 / crop_cfg.dsize
+            crop_infos.append(ret_dct)
+        return crop_infos
 
     def crop_driving_video(self, driving_rgb_lst, **kwargs):
         """Tracking based landmarks/alignment and cropping"""
