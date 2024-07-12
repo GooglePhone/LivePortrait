@@ -19,3 +19,5 @@ pretrained_weights/docs
 animations/*
 tmp/*
 .vscode/launch.json
+
+.idea

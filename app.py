@@ -7,6 +7,11 @@ The entrance of the gradio
 import tyro
 import gradio as gr
 import os.path as osp
+# windows error:OMP: Error #15: Initializing libiomp5md.dll, but found libiomp5md.dll already initialized.,
+# add follow lines work? I don't know why, You can delete it if you don't need
+import os
+os.environ["KMP_DUPLICATE_LIB_OK"]="TRUE"
+
 from src.utils.helper import load_description
 from src.gradio_pipeline import GradioPipeline
 from src.config.crop_config import CropConfig
