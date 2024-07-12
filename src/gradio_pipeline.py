@@ -98,7 +98,10 @@ class GradioPipeline(LivePortraitPipeline):
             ######## process source portrait ########
             img_rgb = load_img_online(input_image, mode='rgb', max_dim=1280, n=16)
             log(f"Load source image from {input_image}.")
-            crop_info = self.cropper.crop_source_image(img_rgb, self.cropper.crop_cfg)
+            crop_infos = self.cropper.crop_source_image(img_rgb, self.cropper.crop_cfg)
+            if not crop_infos:
+                raise Exception("No face detected in the source image!")
+            crop_info = crop_infos[0]
             if flag_do_crop:
                 I_s = self.live_portrait_wrapper.prepare_source(crop_info['img_crop_256x256'])
             else:
