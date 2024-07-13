@@ -33,3 +33,10 @@ class MotionExtractor(nn.Module):
     def forward(self, x):
         out = self.detector(x)
         return out
+
+    def forward_onnx(self, x):
+        out_dict = self.detector(x)
+        out = []
+        for key in ['pitch', 'yaw', 'roll', 't', 'exp', 'scale', 'kp']:
+            out.append(out_dict[key])
+        return out

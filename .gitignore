@@ -21,3 +21,5 @@ tmp/*
 .vscode/launch.json
 
 .idea
+*.trt
+pretrained_weights

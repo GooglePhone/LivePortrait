@@ -1,0 +1,250 @@
+# -*- coding: utf-8 -*-
+# @Time    : 2024/7/13 12:03
+# @Author  : shaoguowen
+# @Email   : wenshaoguo1026@gmail.com
+# @Project : LivePortrait
+# @FileName: export_onnx.py
+
+"""
+reference speed.py
+"""
+import os
+import pdb
+import onnx
+import yaml
+import torch
+import time
+import numpy as np
+from src.utils.helper import load_model, concat_feat
+from src.config.inference_config import InferenceConfig
+
+
+def initialize_inputs(batch_size=1):
+    """
+    Generate random input tensors and move them to GPU
+    """
+    feature_3d = torch.randn(batch_size, 32, 16, 64, 64)
+    kp_source = torch.randn(batch_size, 21, 3)
+    kp_driving = torch.randn(batch_size, 21, 3)
+    source_image = torch.randn(batch_size, 3, 256, 256)
+    generator_input = torch.randn(batch_size, 256, 64, 64)
+    eye_close_ratio = torch.randn(batch_size, 3)
+    lip_close_ratio = torch.randn(batch_size, 2)
+    feat_stitching = concat_feat(kp_source, kp_driving)
+    feat_eye = concat_feat(kp_source, eye_close_ratio)
+    feat_lip = concat_feat(kp_source, lip_close_ratio)
+
+    inputs = {
+        'feature_3d': feature_3d,
+        'kp_source': kp_source,
+        'kp_driving': kp_driving,
+        'source_image': source_image,
+        'generator_input': generator_input,
+        'feat_stitching': feat_stitching,
+        'feat_eye': feat_eye,
+        'feat_lip': feat_lip
+    }
+
+    return inputs
+
+
+def load_torch_models(cfg, model_config):
+    """
+    Load and compile models for inference
+    """
+    appearance_feature_extractor = load_model(cfg.checkpoint_F, model_config, "cpu",
+                                              'appearance_feature_extractor').eval()
+    motion_extractor = load_model(cfg.checkpoint_M, model_config, "cpu", 'motion_extractor').eval()
+    motion_extractor.forward = motion_extractor.forward_onnx
+    warping_module = load_model(cfg.checkpoint_W, model_config, "cpu", 'warping_module').eval()
+    warping_module.forward = warping_module.forward_onnx
+    spade_generator = load_model(cfg.checkpoint_G, model_config, "cpu", 'spade_generator').eval()
+    stitching_retargeting_module = load_model(cfg.checkpoint_S, model_config, "cpu",
+                                              'stitching_retargeting_module')
+
+    return appearance_feature_extractor, motion_extractor, warping_module, spade_generator, stitching_retargeting_module
+
+
+if __name__ == '__main__':
+    inputs = initialize_inputs()
+    """
+    input feature_3d shape: torch.Size([1, 32, 16, 64, 64])
+    input kp_source shape: torch.Size([1, 21, 3])
+    input kp_driving shape: torch.Size([1, 21, 3])
+    input source_image shape: torch.Size([1, 3, 256, 256])
+    input generator_input shape: torch.Size([1, 256, 64, 64])
+    input feat_stitching shape: torch.Size([1, 126])
+    input feat_eye shape: torch.Size([1, 66])
+    input feat_lip shape: torch.Size([1, 65])
+    """
+    for key in inputs:
+        print(f"input {key} shape:", inputs[key].shape)
+
+    # Load configuration
+    cfg = InferenceConfig(device_id=0)
+    model_config_path = cfg.models_config
+    with open(model_config_path, 'r') as file:
+        model_config = yaml.safe_load(file)
+
+    # Load and compile models
+    appearance_feature_extractor, motion_extractor, warping_module, spade_generator, stitching_retargeting_module = load_torch_models(
+        cfg, model_config)
+
+    # export appearance_feature_extractor
+    print("export appearance_feature_extractor >>> ")
+    app_outputs = appearance_feature_extractor(inputs['source_image'])
+    """
+    appearance_feature_extractor output shape: torch.Size([1, 32, 16, 64, 64])
+    """
+    print("appearance_feature_extractor output shape:", app_outputs.shape)
+    torch.onnx.export(
+        appearance_feature_extractor,
+        (inputs['source_image'],),
+        os.path.join("pretrained_weights/liveportrait_onnx", "appearance_feature_extractor.onnx"),
+        export_params=True,
+        opset_version=20,
+        do_constant_folding=True,
+        input_names=['img'],
+        output_names=['output'],
+        dynamic_axes=None
+    )
+
+    # export appearance_feature_extractor
+    print("export motion_extractor >>> ")
+    motion_outputs = motion_extractor(inputs['source_image'])
+    """
+    motion_outputs->pitch shape: torch.Size([1, 66])
+    motion_outputs->yaw shape: torch.Size([1, 66])
+    motion_outputs->roll shape: torch.Size([1, 66])
+    motion_outputs->t shape: torch.Size([1, 3])
+    motion_outputs->exp shape: torch.Size([1, 63])
+    motion_outputs->scale shape: torch.Size([1, 1])
+    motion_outputs->kp shape: torch.Size([1, 63])
+    """
+    for i, key in enumerate(['pitch', 'yaw', 'roll', 't', 'exp', 'scale', 'kp']):
+        print(f"motion_outputs->{key} shape:", motion_outputs[i].shape)
+    torch.onnx.export(
+        motion_extractor,
+        (inputs['source_image'],),
+        os.path.join("pretrained_weights/liveportrait_onnx", "motion_extractor.onnx"),
+        export_params=True,
+        opset_version=20,
+        do_constant_folding=True,
+        input_names=['img'],
+        output_names=['pitch', 'yaw', 'roll', 't', 'exp', 'scale', 'kp'],
+        dynamic_axes=None
+    )
+
+    # export appearance_feature_extractor
+    print("export warping_module >>> ")
+    warping_outputs = warping_module(inputs['feature_3d'], inputs['kp_driving'], inputs['kp_source'])
+    """
+    warping_module->occlusion_map shape: torch.Size([1, 1, 64, 64])
+    warping_module->deformation shape: torch.Size([1, 16, 64, 64, 3])
+    warping_module->out shape: torch.Size([1, 256, 64, 64])
+    """
+    for i, key in enumerate(['occlusion_map', 'deformation', 'out']):
+        print(f"warping_module->{key} shape:", warping_outputs[i].shape)
+    # use pip3 install --pre torch torchvision torchaudio --index-url https://download.pytorch.org/whl/nightly/cu121
+    torch.onnx.export(
+        warping_module,
+        (inputs['feature_3d'], inputs['kp_driving'], inputs['kp_source']),
+        os.path.join("pretrained_weights/liveportrait_onnx", "warping.onnx"),
+        export_params=True,
+        opset_version=20,
+        do_constant_folding=True,
+        input_names=['feature_3d', 'kp_driving', 'kp_source'],
+        output_names=['occlusion_map', 'deformation', 'out'],
+        dynamic_axes=None
+    )
+
+
+    def modify_onnx_model(onnx_model_path, onnx_save_path, custom_op_name="GridSample3D"):
+        model = onnx.load(onnx_model_path)
+        for node in model.graph.node:
+            if node.op_type == 'GridSample':
+                node.op_type = custom_op_name
+        onnx.save(model, onnx_save_path)
+
+
+    modify_onnx_model(os.path.join("pretrained_weights/liveportrait_onnx", "warping.onnx"),
+                      os.path.join("pretrained_weights/liveportrait_onnx", "warping-fix.onnx"))
+
+    # spade_generator export
+    print("export spade_generator >>> ")
+    spade_outputs = spade_generator(inputs['generator_input'])
+    """
+    spade_generator output shape: torch.Size([1, 3, 512, 512])
+    """
+    print(f"spade_generator output  shape:", spade_outputs.shape)
+    torch.onnx.export(
+        spade_generator,
+        (inputs['generator_input'],),
+        os.path.join("pretrained_weights/liveportrait_onnx", "spade_generator.onnx"),
+        export_params=True,
+        opset_version=20,
+        do_constant_folding=True,
+        input_names=['input'],
+        output_names=['output'],
+        dynamic_axes=None
+    )
+
+    # stitching export
+    print("export stitching >>> ")
+    stitching_model = stitching_retargeting_module['stitching']
+    """
+    stitching_model output shape: torch.Size([1, 65])
+    """
+    stitching_outputs = stitching_model(inputs['feat_stitching'])
+    print(f"stitching_model output shape:", stitching_outputs.shape)
+    torch.onnx.export(
+        stitching_model,
+        (inputs['feat_stitching'],),
+        os.path.join("pretrained_weights/liveportrait_onnx", "stitching.onnx"),
+        export_params=True,
+        opset_version=20,
+        do_constant_folding=True,
+        input_names=['input'],
+        output_names=['output'],
+        dynamic_axes=None
+    )
+
+    # eye_stitching_model export
+    print("export eye_stitching_model >>> ")
+    eye_stitching_model = stitching_retargeting_module['eye']
+    """
+    eye_stitching output shape: torch.Size([1, 63])
+    """
+    eye_stitching_outputs = eye_stitching_model(inputs['feat_eye'])
+    print(f"eye_stitching output shape:", eye_stitching_outputs.shape)
+    torch.onnx.export(
+        eye_stitching_model,
+        (inputs['feat_eye'],),
+        os.path.join("pretrained_weights/liveportrait_onnx", "stitching_eye.onnx"),
+        export_params=True,
+        opset_version=20,
+        do_constant_folding=True,
+        input_names=['input'],
+        output_names=['output'],
+        dynamic_axes=None
+    )
+
+    # eye_stitching_model export
+    print("export lip_stitching_model >>> ")
+    lip_stitching_model = stitching_retargeting_module['lip']
+    """
+    lip_stitching output shape: torch.Size([1, 63])
+    """
+    lip_stitching_outputs = lip_stitching_model(inputs['feat_lip'])
+    print(f"lip_stitching output shape:", lip_stitching_outputs.shape)
+    torch.onnx.export(
+        lip_stitching_model,
+        (inputs['feat_lip'],),
+        os.path.join("pretrained_weights/liveportrait_onnx", "stitching_lip.onnx"),
+        export_params=True,
+        opset_version=20,
+        do_constant_folding=True,
+        input_names=['input'],
+        output_names=['output'],
+        dynamic_axes=None
+    )

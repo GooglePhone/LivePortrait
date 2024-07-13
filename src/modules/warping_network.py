@@ -4,7 +4,8 @@
 Warping field estimator(W) defined in the paper, which generates a warping field using the implicit
 keypoint representations x_s and x_d, and employs this flow field to warp the source feature volume f_s.
 """
-
+import pdb
+import torch
 from torch import nn
 import torch.nn.functional as F
 from .util import SameBlock2d
@@ -75,3 +76,26 @@ class WarpingNetwork(nn.Module):
         }
 
         return ret_dct
+
+    def forward_onnx(self, feature_3d, kp_driving, kp_source):
+        if self.dense_motion_network is not None:
+            # Feature warper, Transforming feature representation according to deformation and occlusion
+            dense_motion = self.dense_motion_network(
+                feature=feature_3d, kp_driving=kp_driving, kp_source=kp_source
+            )
+            if 'occlusion_map' in dense_motion:
+                occlusion_map = dense_motion['occlusion_map']  # Bx1x64x64
+            else:
+                occlusion_map = None
+
+            deformation = dense_motion['deformation']  # Bx16x64x64x3
+            out = self.deform_input(feature_3d, deformation)  # Bx32x16x64x64
+
+            bs, c, d, h, w = out.shape  # Bx32x16x64x64
+            out = out.view(bs, c * d, h, w)  # -> Bx512x64x64
+            out = self.third(out)  # -> Bx256x64x64
+            out = self.fourth(out)  # -> Bx256x64x64
+
+            if self.flag_use_occlusion_map and (occlusion_map is not None):
+                out = out * occlusion_map
+        return occlusion_map, deformation, out
