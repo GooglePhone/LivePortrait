@@ -8,12 +8,19 @@ import tyro
 import subprocess
 import gradio as gr
 import os.path as osp
-from src.utils.helper import load_description
+from src.utils.helper import load_description, is_video
 from src.gradio_pipeline import GradioPipeline
 from src.config.crop_config import CropConfig
 from src.config.argument_config import ArgumentConfig
 from src.config.inference_config import InferenceConfig
 
+def update_source_preview(file):
+    if file is None:
+        return None, None
+    if is_video(file.name):
+        return None, file.name
+    else:
+        return file.name, None
 
 def partial_fields(target_class, kwargs):
     return target_class(**{k: v for k, v in kwargs.items() if hasattr(target_class, k)})
@@ -81,8 +88,10 @@ with gr.Blocks(theme=gr.themes.Soft()) as demo:
     gr.HTML(load_description(title_md))
     gr.Markdown(load_description("assets/gradio_description_upload.md"))
     with gr.Row():
-        with gr.Accordion(open=True, label="Source Portrait"):
-            image_input = gr.Image(type="filepath")
+        with gr.Accordion(open=True, label="Source Portrait (Image or Video)"):
+            source_input = gr.File(label="Upload Image or Video")
+            source_image_preview = gr.Image(type="filepath", visible=False)
+            source_video_preview = gr.Video(visible=False)
             gr.Examples(
                 examples=[
                     [osp.join(example_portrait_dir, "s9.jpg")],
@@ -92,7 +101,7 @@ with gr.Blocks(theme=gr.themes.Soft()) as demo:
                     [osp.join(example_portrait_dir, "s7.jpg")],
                     [osp.join(example_portrait_dir, "s12.jpg")],
                 ],
-                inputs=[image_input],
+                inputs=[source_input],
                 cache_examples=False,
             )
         with gr.Accordion(open=True, label="Driving Video"):
@@ -120,7 +129,7 @@ with gr.Blocks(theme=gr.themes.Soft()) as demo:
         with gr.Column():
             process_button_animation = gr.Button("🚀 Animate", variant="primary")
         with gr.Column():
-            process_button_reset = gr.ClearButton([image_input, video_input, output_video, output_video_concat], value="🧹 Clear")
+            process_button_reset = gr.ClearButton([source_input, video_input, output_video, output_video_concat], value="🧹 Clear")
     with gr.Row():
         with gr.Column():
             with gr.Accordion(open=True, label="The animated video in the original image space"):
@@ -136,7 +145,7 @@ with gr.Blocks(theme=gr.themes.Soft()) as demo:
             examples=data_examples,
             fn=gpu_wrapped_execute_video,
             inputs=[
-                image_input,
+                source_input,
                 video_input,
                 flag_relative_input,
                 flag_do_crop_input,
@@ -193,10 +202,26 @@ with gr.Blocks(theme=gr.themes.Soft()) as demo:
         outputs=[output_image, output_image_paste_back],
         show_progress=True
     )
+    # Update the source preview when a file is uploaded
+    source_input.change(
+        fn=update_source_preview,
+        inputs=[source_input],
+        outputs=[source_image_preview, source_video_preview]
+    )
+
+    # Update visibility of previews
+    source_input.change(
+        fn=lambda file: [gr.update(visible=file is not None and not is_video(file.name)),
+                         gr.update(visible=file is not None and is_video(file.name))],
+        inputs=[source_input],
+        outputs=[source_image_preview, source_video_preview]
+    )
+
+    # Update the process_button_animation click event
     process_button_animation.click(
         fn=gpu_wrapped_execute_video,
         inputs=[
-            image_input,
+            source_input,
             video_input,
             flag_relative_input,
             flag_do_crop_input,
