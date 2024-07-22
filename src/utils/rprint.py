@@ -6,11 +6,16 @@ custom print and log functions
 
 __all__ = ['rprint', 'rlog']
 
-try:
-    from rich.console import Console
-    console = Console()
-    rprint = console.print
-    rlog = console.log
-except:
-    rprint = print
-    rlog = print
+def rprint(*args, **kwargs):
+    # Remove unsupported keyword arguments
+    unsupported_kwargs = ['style', 'duration', 'source']
+    filtered_kwargs = {k: v for k, v in kwargs.items() if k not in unsupported_kwargs}
+    print(*args, **filtered_kwargs)
+
+def rlog(*args, **kwargs):
+    # Remove unsupported keyword arguments
+    unsupported_kwargs = ['style', 'duration', 'source']
+    filtered_kwargs = {k: v for k, v in kwargs.items() if k not in unsupported_kwargs}
+    print(*args, **filtered_kwargs)
+
+
