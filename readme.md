@@ -209,6 +209,8 @@ Discover the invaluable resources contributed by our community to enhance your L
 - [LivePortrait hands-on tutorial](https://www.youtube.com/watch?v=uyjSTAOY7yI) by [@AI Search](https://www.youtube.com/@theAIsearch)
 - [ComfyUI tutorial](https://www.youtube.com/watch?v=8-IcDDmiUMM) by [@Sebastian Kamph](https://www.youtube.com/@sebastiankamph)
 - [Replicate Playground](https://replicate.com/fofr/live-portrait) and [cog-comfyui](https://github.com/fofr/cog-comfyui) by [@fofr](https://github.com/fofr)
+- [LivePortrait RunPod Template](https://runpod.io/console/deploy?template=bq3dmz6nwp&ref=2xxro4sy) by [@ashleykleynhans](https://github.com/ashleykleynhans)
+- [LivePortrait Docker Image](https://github.com/ashleykleynhans/liveportrait-docker) by [@ashleykleynhans](https://github.com/ashleykleynhans)
 
 And many more amazing contributions from our community!
 
