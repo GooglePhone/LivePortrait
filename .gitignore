@@ -22,3 +22,7 @@ tmp/*
 .vscode/launch.json
 **/*.DS_Store
 gradio_temp/**
+
+# Windows environment
+ffmpeg/
+LivePortrait_env/

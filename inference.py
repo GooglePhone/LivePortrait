@@ -1,5 +1,6 @@
 # coding: utf-8
 
+import os
 import os.path as osp
 import tyro
 import subprocess
@@ -33,6 +34,9 @@ def main():
     tyro.extras.set_accent_color("bright_cyan")
     args = tyro.cli(ArgumentConfig)
 
+    current_dir = os.getcwd()
+    ffmpeg_dir = os.path.join(current_dir, "ffmpeg")
+    os.environ["PATH"] += os.pathsep + ffmpeg_dir
     if not fast_check_ffmpeg():
         raise ImportError(
             "FFmpeg is not installed. Please install FFmpeg (including ffmpeg and ffprobe) before running this script. https://ffmpeg.org/download.html"
